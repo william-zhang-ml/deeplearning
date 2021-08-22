@@ -1,3 +1,5 @@
+from typing import Iterable
+import torch
 from torch import Tensor
 import torch.nn as nn
 from torch.nn import Module, Sequential
@@ -53,3 +55,48 @@ class PredictOnAverage(Module):
             sum_repr = (seq * mask).sum(dim=0)    # B, D
             ave_repr = sum_repr / seq_lens        # B, D
         return self.pred_head(ave_repr)           # B, num_classes
+
+
+class ChannelMseLoss:
+    """ Mean square error but allows asymmetric feature/channel weighting. """
+    def __init__(self, lams: Iterable[float]):
+        """ Constructor.
+
+        :param lams: channel weights
+        :type  lams: Iterable[float]
+        """
+        self.lams = torch.tensor(lams)
+
+    def __call__(self, x: Tensor, y: Tensor, mask: Tensor = None) -> Tensor:
+        """ Compute loss
+
+        :param x:    target (T, B, D)
+        :type  x:    Tensor
+        :param y:    prediction (T, B, D)
+        :type  y:    Tensor
+        :param mask: marks where seq is not padded (T, B), defaults to None
+        :type  mask: Tensor, optional
+        :return:     MSE loss, weighted by channel
+        :rtype:      Tensor
+        """
+        sq_err = (x - y) ** 2
+        if mask is None:
+            samp_ave = sq_err.mean(dim=0)          # B, D
+        else:
+            mask = mask.view(*mask.shape, 1)       # T, B, 1
+            seq_lens = mask.sum(dim=0)             # B, 1
+            samp_sum = (sq_err * mask).sum(dim=0)  # B, D zero out padding
+            samp_ave = samp_sum / seq_lens         # B, D
+        view_shape = [1] * samp_ave.ndim
+        view_shape[-1] = len(self)
+        lam_view = self.lams.reshape(view_shape)   # 1, D
+
+        return (lam_view * samp_ave).mean()
+
+    def __len__(self) -> int:
+        """ Length.
+
+        :return: Expected number of channels
+        :rtype:  int
+        """
+        return len(self.lams)
