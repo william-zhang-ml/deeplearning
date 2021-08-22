@@ -22,6 +22,45 @@ class OneHiddenEmbedding(Sequential):
         self.add_module('Lin1', nn.Linear(embed_dim, embed_dim))
 
 
+class ConvEmbedding(Module):
+    """ Temporal conv embedding block w/one hidden layer. """
+    def __init__(self, inp_dim: int, embed_dim: int) -> None:
+        """ Constructor.
+
+        :param inp_dim:   input dimension
+        :type  inp_dim:   int
+        :param embed_dim: desired embedding dimension
+        :type  embed_dim: int
+        """
+        super(ConvEmbedding, self).__init__()
+        self.embed = Sequential(
+            nn.Conv1d(in_channels=inp_dim,
+                      out_channels=embed_dim,
+                      kernel_size=3,
+                      stride=1,
+                      padding=1,
+                      bias=False),
+            nn.BatchNorm1d(embed_dim),
+            nn.ReLU(),
+            nn.Conv1d(in_channels=embed_dim,
+                      out_channels=embed_dim,
+                      kernel_size=3,
+                      stride=1,
+                      padding=1))
+
+    def forward(self, seq: Tensor) -> Tensor:
+        """ Compute sequence embedding.
+
+        :param seq: input sequences (T, B, D)
+        :type  seq: Tensor
+        :return:    embedded sequences (T, B, E)
+        :rtype:     Tensor
+        """
+        seq = seq.transpose(0, 1).transpose(1, 2)   # (B, D, T)
+        emb = self.embed(seq)                       # (B, E, T)
+        return emb.transpose(1, 2).transpose(0, 1)  # (T, B, E)
+
+
 class PredictOnAverage(Module):
     """ Multiclass logistic regression on sequence average representation. """
     def __init__(self, inp_dim: int, num_classes: int) -> None:
