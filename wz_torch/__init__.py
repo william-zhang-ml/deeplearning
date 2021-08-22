@@ -1,4 +1,4 @@
-from typing import Iterable
+from typing import Iterable, Tuple
 import torch
 from torch import Tensor
 import torch.nn as nn
@@ -139,3 +139,36 @@ class ChannelMseLoss:
         :rtype:  int
         """
         return len(self.lams)
+
+
+class GaussDistrLayer(Module):
+    """ Output isotropic Gaussian distribution parameters. """
+    def __init__(self, inp_dim: int, gauss_dim: int):
+        """ Constructor.
+
+        :param inp_dim:   input dimension
+        :type  inp_dim:   int
+        :param gauss_dim: Gaussian dimension
+        :type  gauss_dim: int
+        """
+        super(GaussDistrLayer, self).__init__()
+        self.mean = nn.Sequential(
+            nn.Linear(inp_dim, gauss_dim),
+            nn.LayerNorm(gauss_dim),
+            nn.ReLU(),
+            nn.Linear(gauss_dim, gauss_dim))
+        self.logvar = nn.Sequential(
+            nn.Linear(inp_dim, gauss_dim),
+            nn.LayerNorm(gauss_dim),
+            nn.ReLU(),
+            nn.Linear(gauss_dim, gauss_dim),
+            nn.Softplus())
+
+    def forward(self, *args) -> Tuple[Tensor, Tensor]:
+        """ Compute distribution parameters from features (B, D).
+
+        :return: mean, log variance (B, DG), (B, DG)
+        :rtype:  Tuple[Tensor, Tensor]
+        """
+        inp = torch.cat(args, dim=-1)
+        return self.mean(inp), self.logvar(inp)
