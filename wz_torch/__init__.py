@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.nn import Module, Sequential
 
 
-class OneHiddenEmbedding(Sequential):
+class OneHiddenEmbedding(Module):
     """ Pointwise embedding block w/one hidden layer. """
     def __init__(self, inp_dim: int, embed_dim: int) -> None:
         """ Constructor.
@@ -16,10 +16,20 @@ class OneHiddenEmbedding(Sequential):
         :type  embed_dim: int
         """
         super(OneHiddenEmbedding, self).__init__()
-        self.add_module('Lin0', nn.Linear(inp_dim, embed_dim, bias=False))
-        self.add_module('Norm0', nn.LayerNorm(embed_dim))
-        self.add_module('Act0', nn.ReLU())
-        self.add_module('Lin1', nn.Linear(embed_dim, embed_dim))
+        self.embed = Sequential(
+            nn.Linear(inp_dim, embed_dim, bias=False),
+            nn.LayerNorm(embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, embed_dim))
+
+    def forward(self, *args) -> Tensor:
+        """ Compute sequence embedding.
+
+        :return:    embedded sequences (T, B, E)
+        :rtype:     Tensor
+        """
+        seq = torch.cat(args, dim=-1)
+        return self.embed(seq)
 
 
 class ConvEmbedding(Module):
