@@ -1,6 +1,7 @@
 from typing import Union, Tuple
+from torch import Tensor
 import torch.nn as nn
-from torch.nn import Sequential
+from torch.nn import Sequential, Module
 
 
 class ConvBatchRelu(Sequential):
@@ -34,3 +35,51 @@ class ConvBatchRelu(Sequential):
             bias=False))
         self.add_module('norm', nn.BatchNorm2d(out_channels))
         self.add_module('relu', nn.ReLU())
+
+
+class ResidualBottleneck(Module):
+    """ Residual block: 1 x 1, 3 x 3, 1 x 1, full pre-activation.
+        See https://arxiv.org/pdf/1603.05027.pdf 4e.
+    """
+    def __init__(self,
+                 in_channels: int,
+                 bottle_channels: int) -> None:
+        """ Constructor.
+
+        :param in_channels:     number of input channels
+        :type  in_channels:     int
+        :param bottle_channels: number of bottleneck channels (< in_channels)
+        :type  bottle_channels: int
+        """
+        super(ResidualBottleneck, self).__init__()
+        self.residual = Sequential(
+            nn.BatchNorm2d(in_channels),       # preactivation
+            nn.ReLU(),                         # preactivation
+            ConvBatchRelu(
+                in_channels=in_channels,
+                out_channels=bottle_channels,
+                kernel_size=1,
+                stride=1,
+                padding=0),                    # 1 x 1
+            ConvBatchRelu(
+                in_channels=bottle_channels,
+                out_channels=bottle_channels,
+                kernel_size=3,
+                stride=1,
+                padding=1),                    # 3 x 3
+            nn.Conv2d(
+                in_channels=bottle_channels,
+                out_channels=in_channels,
+                kernel_size=1,
+                stride=1,
+                padding=0))                    # 1 x 1
+
+    def forward(self, inp: Tensor) -> Tensor:
+        """ Compute residual and add to main path.
+
+        :param inp: feature map (N, D, H, W)
+        :type  inp: Tensor
+        :return:    residual-adjusted feature map
+        :rtype:     Tensor
+        """
+        return inp + self.residual(inp)
