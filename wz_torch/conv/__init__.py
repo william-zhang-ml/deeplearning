@@ -1,11 +1,13 @@
+""" Unsorted deep learning utils for computer vision. """
 from typing import Union, Tuple
 from torch import Tensor
 import torch.nn as nn
 from torch.nn import Sequential, Module
+import torch.nn.functional as F
 
 
 class ConvBatchRelu(Sequential):
-    """ Fundamental convnet building block: conv-batchnorm-relu. """
+    """ Fundamental convnet building block: conv, batchnorm, relu. """
     def __init__(self,
                  in_channels: int,
                  out_channels: int,
@@ -39,7 +41,7 @@ class ConvBatchRelu(Sequential):
 
 class ResidualBottleneck(Module):
     """ Residual block: 1 x 1, 3 x 3, 1 x 1, full pre-activation.
-        See https://arxiv.org/pdf/1603.05027.pdf 4e.
+        See https://arxiv.org/pdf/1603.05027.pdf Fig 4e.
     """
     def __init__(self,
                  in_channels: int,
@@ -83,3 +85,23 @@ class ResidualBottleneck(Module):
         :rtype:     Tensor
         """
         return inp + self.residual(inp)
+
+
+class GapSoftmax(Module):
+    """ Classification head: global average pooling, softmax.
+        See: https://arxiv.org/pdf/1312.4400.pdf Section 3.2.
+    """
+    def __init__(self) -> None:
+        """ Constructor. """
+        super(GapSoftmax, self).__init__()
+
+    def forward(self, inp: Tensor) -> Tensor:
+        """ Compute class confidence scores from average feature map.
+
+        :param inp: feature map (N, D, H, W)
+        :type  inp: Tensor
+        :return:    class confidence scores (N, D)
+        :rtype:     Tensor
+        """
+        ave = inp.mean(dim=-1).mean(dim=-1)
+        return F.softmax(ave, dim=-1)
