@@ -80,3 +80,42 @@ class YoloHead(Module):
         regr = self.regression(inp)       # B, 2, H, W
         class_conf = self.classify(inp)   # B, K, H, W
         return torch.cat([detect, offset, regr, class_conf], dim=1)
+
+
+class YoloLayer(Module):
+    """ Parallel Yolo version 1 - 3 prediction heads. """
+    def __init__(self,
+                 in_channels: int,
+                 num_class: int,
+                 priors: Tuple[float, float],
+                 use_softmax: bool = False) -> None:
+        """ Constructor.
+
+        :param in_channels: expected input feature map depth (D)
+        :type  in_channels: int
+        :param num_class:   number of target classes (K)
+        :type  num_class:   int
+        :param priors:      prior box associated with this head
+        :type  priors:      Tuple[Tuple[float, float]]
+        :param use_softmax: whether to classify obj w/softmax or sigmoid,
+                            defaults to False
+        :type  use_softmax: bool, optional
+        """
+        super(YoloLayer, self).__init__()
+        self.heads = nn.ModuleList([
+            YoloHead(in_channels=in_channels,
+                     num_class=num_class,
+                     prior=p,
+                     use_softmax=use_softmax)
+            for p in priors
+        ])
+
+    def forward(self, inp: Tensor) -> Tensor:
+        """ Detect, localize, and classify objects.
+
+        :param inp: input feature map (B, D, H, W)
+        :type  inp: Tensor
+        :return:    Yolo prediction grid (P, B, 5 + K, H, W)
+        :rtype:     Tensor
+        """
+        return torch.stack([h(inp) for h in self.heads], dim=0)
