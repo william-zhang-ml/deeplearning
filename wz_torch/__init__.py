@@ -5,6 +5,17 @@ import torch.nn as nn
 from torch.nn import Module, Sequential
 
 
+def count_params(module: Module) -> int:
+    """ Count the number of trainable parameters.
+
+    :param module: PyTorch module
+    :type  module: Module
+    :return:       number of trainable parameters
+    :rtype:        int
+    """
+    return sum([p.nelement() for p in module.parameters()])
+
+
 class OneHiddenEmbedding(Module):
     """ Pointwise embedding block w/one hidden layer. """
     def __init__(self, inp_dim: int, embed_dim: int) -> None:
