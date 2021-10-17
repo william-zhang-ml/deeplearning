@@ -129,13 +129,14 @@ class GapLinearSoftmax(Module):
         self.linear = nn.Linear(in_features, num_classes)
         self.make_cam = make_cam
 
-    def forward(self, inp: Tensor) -> Tensor:
+    def forward(self, inp: Tensor) -> Tuple[Tensor, Tensor]:
         """ Compute class confidence scores from average feature map.
 
         :param inp: feature map (N, in_features, H, W)
         :type  inp: Tensor
-        :return:    class confidence scores (N, num_classes)
-        :rtype:     Tensor
+        :return:    class confidence scores (N, num_classes),
+                    class activation map (N, num_classes, H, W)
+        :rtype:     Tuple[Tensor, Tensor]
         """
         num_samp, num_maps, height, width = inp.shape
         ave = inp.mean(dim=-1).mean(dim=-1)
