@@ -113,16 +113,21 @@ class GapLinearSoftmax(Module):
     """
     def __init__(self,
                  in_features: int,
-                 num_classes: int) -> None:
+                 num_classes: int,
+                 make_cam: bool = False) -> None:
         """ Constructor.
 
         :param in_features: number of inputs
         :type  in_features: int
         :param num_classes: number of target classes
         :type  num_classes: int
+        :param make_cam:    whether to make class activation map for outputs,
+                            defaults to False
+        :type  make_cam:    bool, optional
         """
         super(GapLinearSoftmax, self).__init__()
         self.linear = nn.Linear(in_features, num_classes)
+        self.make_cam = make_cam
 
     def forward(self, inp: Tensor) -> Tensor:
         """ Compute class confidence scores from average feature map.
@@ -132,6 +137,17 @@ class GapLinearSoftmax(Module):
         :return:    class confidence scores (N, num_classes)
         :rtype:     Tensor
         """
+        num_samp, num_maps, height, width = inp.shape
         ave = inp.mean(dim=-1).mean(dim=-1)
         preact = self.linear(ave)
-        return F.softmax(preact, dim=-1)
+
+        if self.make_cam:
+            featmap_vecs = inp.view(num_samp, num_maps, height * width)
+            weight = self.linear.weight.detach().unsqueeze(0)
+
+            # (1, num_classes, num_maps) @ (num_samp, num_maps, height * width)
+            # -> (num_samp, num_classes, height * width)
+            cam = (weight @ featmap_vecs).view(num_samp, -1, height, width)
+        else:
+            cam = None
+        return F.softmax(preact, dim=-1), cam
