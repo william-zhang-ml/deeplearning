@@ -105,3 +105,33 @@ class GapSoftmax(Module):
         """
         ave = inp.mean(dim=-1).mean(dim=-1)
         return F.softmax(ave, dim=-1)
+
+
+class GapLinearSoftmax(Module):
+    """ Classification head: global average pooling, softmax.
+        See: https://arxiv.org/pdf/1312.4400.pdf Section 3.2.
+    """
+    def __init__(self,
+                 in_features: int,
+                 num_classes: int) -> None:
+        """ Constructor.
+
+        :param in_features: number of inputs
+        :type  in_features: int
+        :param num_classes: number of target classes
+        :type  num_classes: int
+        """
+        super(GapLinearSoftmax, self).__init__()
+        self.linear = nn.Linear(in_features, num_classes)
+
+    def forward(self, inp: Tensor) -> Tensor:
+        """ Compute class confidence scores from average feature map.
+
+        :param inp: feature map (N, in_features, H, W)
+        :type  inp: Tensor
+        :return:    class confidence scores (N, num_classes)
+        :rtype:     Tensor
+        """
+        ave = inp.mean(dim=-1).mean(dim=-1)
+        preact = self.linear(ave)
+        return F.softmax(preact, dim=-1)
