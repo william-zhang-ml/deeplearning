@@ -1,8 +1,9 @@
-from typing import Tuple
+from typing import Iterable, Tuple
 import torch
 from torch import Tensor
 import torch.nn as nn
 from torch.nn import Module
+from torchvision.ops.boxes import box_iou
 
 
 class YoloHead(Module):
@@ -119,3 +120,33 @@ class YoloLayer(Module):
         :rtype:     Tensor
         """
         return torch.stack([h(inp) for h in self.heads], dim=0)
+
+
+def assign_to_prior(boxes: Iterable[Iterable[float]],
+                    priors: Iterable[Iterable[float]]) -> Tensor:
+    """ Matches bounding box to best-fit prior box.
+
+    :param boxes:  bounding boxes (width, height) to match, (N, 2)
+    :type  boxes:  Iterable[float]
+    :param priors: prior boxes to choose from (width, height), (P, 2)
+    :type  priors: Iterable[float]
+    :return:       indices to matched prior box (N, )
+    :rtype:        Tensor
+    """
+    boxes = torch.tensor(boxes, dtype=torch.float32)    # cast
+    priors = torch.tensor(priors, dtype=torch.float32)  # cast
+
+    # center all boxes around the origin
+    boxes = torch.stack([
+        -boxes[:, 0] / 2,
+        -boxes[:, 1] / 2,
+        boxes[:, 0] / 2,
+        boxes[:, 1] / 2], dim=1)
+    priors = torch.stack([
+        -priors[:, 0] / 2,
+        -priors[:, 1] / 2,
+        priors[:, 0] / 2,
+        priors[:, 1] / 2], dim=1)
+
+    iou = box_iou(boxes, priors)  # (N, P)
+    return iou.argmax(dim=-1)     # match by IOU
