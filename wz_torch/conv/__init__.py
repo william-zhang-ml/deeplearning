@@ -2,7 +2,6 @@
 from typing import Union, Tuple
 import torch
 from torch import Tensor
-from torch.functional import align_tensors
 import torch.nn as nn
 from torch.nn import Sequential, Module
 import torch.nn.functional as F
