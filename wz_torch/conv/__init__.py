@@ -2,6 +2,7 @@
 from typing import Union, Tuple
 import torch
 from torch import Tensor
+from torch.functional import align_tensors
 import torch.nn as nn
 from torch.nn import Sequential, Module
 import torch.nn.functional as F
@@ -197,3 +198,59 @@ class GapLinearSigmoid(Module):
         else:
             cam = None
         return torch.sigmoid(preact), cam
+
+
+class FeaturePyramidLinkR(Module):
+    """ Feature pyramid network link (post-relu inputs).
+        See: https://arxiv.org/pdf/1612.03144.pdf.
+    """
+    def __init__(self,
+                 top_channels: int,
+                 lat_channels: int,
+                 mode: str = 'bilinear',
+                 align_corners: bool = True) -> None:
+        """ Constructor.
+
+        :param top_channels:  num of channels in more abstract, more coarse map
+        :type  top_channels:  int
+        :param lat_channels:  num of channels in less abstract, more fine map
+        :type  lat_channels:  int
+        :param mode:          upsample interpolation approach,
+                              defaults to 'bilinear'
+        :type  mode:          str, optional
+        :param align_corners: whether upsample output is aligned w/input,
+                              defaults to True
+        :type  align_corners: bool, optional
+        """
+        super(FeaturePyramidLinkR, self).__init__()
+        self.top_channels = top_channels
+        self.lat_channels = lat_channels
+        self.mode = mode
+        self.align_corners = align_corners
+        self.nin = ConvBatchRelu(in_channels=lat_channels,
+                                 out_channels=top_channels,
+                                 kernel_size=1,
+                                 stride=1,
+                                 padding=0)
+        self.bottleneck = ConvBatchRelu(in_channels=top_channels,
+                                        out_channels=lat_channels,
+                                        kernel_size=1,
+                                        stride=1,
+                                        padding=0)
+
+    def forward(self, top: Tensor, lat: Tensor) -> Tensor:
+        """ Compute multiscale feature map by upsampling and adding.
+
+        :param top: more abstract, more coarse feature map
+        :type  top: Tensor
+        :param lat: less abstract, more fine feature map
+        :type  lat: Tensor
+        :return:    multiscale feature map
+        :rtype:     Tensor
+        """
+        top_upsampled = F.interpolate(top,
+                                      size=lat.shape[-2:],
+                                      mode=self.mode,
+                                      align_corners=self.align_corners)
+        lat_features = self.nin(lat)
+        return self.bottleneck(top_upsampled + lat_features)
