@@ -1,5 +1,6 @@
 """ Unsorted deep learning utils for computer vision. """
 from typing import Union, Tuple
+import torch
 from torch import Tensor
 import torch.nn as nn
 from torch.nn import Sequential, Module
@@ -152,3 +153,47 @@ class GapLinearSoftmax(Module):
         else:
             cam = None
         return F.softmax(preact, dim=-1), cam
+
+
+class GapLinearSigmoid(Module):
+    """ Classification head: global average pooling, sigmoid.
+        See: https://arxiv.org/pdf/1312.4400.pdf Section 3.2.
+    """
+    def __init__(self,
+                 in_features: int,
+                 make_cam: bool = False) -> None:
+        """ Constructor.
+
+        :param in_features: number of inputs
+        :type  in_features: int
+        :param make_cam:    whether to make class activation map for outputs,
+                            defaults to False
+        :type  make_cam:    bool, optional
+        """
+        super(GapLinearSigmoid, self).__init__()
+        self.linear = nn.Linear(in_features, 1)
+        self.make_cam = make_cam
+
+    def forward(self, inp: Tensor) -> Tuple[Tensor, Tensor]:
+        """ Compute confidence score from average feature map.
+
+        :param inp: feature map (N, in_features, H, W)
+        :type  inp: Tensor
+        :return:    class confidence scores (N, 1),
+                    class activation map (N, 1, H, W)
+        :rtype:     Tuple[Tensor, Tensor]
+        """
+        num_samp, num_maps, height, width = inp.shape
+        ave = inp.mean(dim=-1).mean(dim=-1)
+        preact = self.linear(ave)
+
+        if self.make_cam:
+            featmap_vecs = inp.view(num_samp, num_maps, height * width)
+            weight = self.linear.weight.detach().unsqueeze(0)
+
+            # (1, num_classes, num_maps) @ (num_samp, num_maps, height * width)
+            # -> (num_samp, num_classes, height * width)
+            cam = (weight @ featmap_vecs).view(num_samp, -1, height, width)
+        else:
+            cam = None
+        return torch.sigmoid(preact), cam
