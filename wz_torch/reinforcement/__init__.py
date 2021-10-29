@@ -21,11 +21,21 @@ class PitfallEnv(Env):
         self.wait_reward = -1
 
     @property
-    def num_rows(self):
+    def num_rows(self) -> int:
+        """ Number of board rows.
+
+        :return: number of board rows
+        :rtype:  int
+        """
         return len(self.board)
 
     @property
-    def num_cols(self):
+    def num_cols(self) -> int:
+        """ Number of board columns.
+
+        :return: number of board columns
+        :rtype:  int
+        """
         return len(self.board[0])
 
     def reset(self) -> int:
