@@ -1,6 +1,7 @@
 from typing import Iterable, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
+from pandas import DataFrame
 import torch
 from torch import Tensor
 import torch.nn as nn
@@ -204,3 +205,33 @@ def plot_prior_regions(priors: Iterable[Iterable[float]],
     ax.set_ylim([h_min, h_max])
     fig.tight_layout()
     return fig, ax
+
+
+def append_yolo_targets(annot: DataFrame,
+                        bin_w: float,
+                        bin_h: float,
+                        priors: DataFrame) -> DataFrame:
+    """ Compute and append Yolo target values to annotation DataFrame (in-place).
+
+    :param annot:  ground truth bounding boxes (columns 'xc', 'yc', 'w', 'h')
+    :type  annot:  DataFrame
+    :param bin_w:  prediction cell width
+    :type  bin_w:  float
+    :param bin_h:  prediction cell height
+    :type  bin_h:  float
+    :param priors: prior boxes (columns 'w', 'h')
+    :type  priors: DataFrame
+    :return:       annotations w/appended target values
+                   (columns 'prior', 'ix', 'tx', 'iy', 'ty', 'tw', 'th')
+    :rtype:        DataFrame
+    """
+    annot['prior'] = assign_to_prior(
+        annot[['w', 'h']].values,
+        priors[['w', 'h']].values)
+    annot['ix'], x_rem = np.divmod(annot.xc.values, bin_w)
+    annot['tx'] = x_rem / bin_w
+    annot['iy'], y_rem = np.divmod(annot.yc.values, bin_h)
+    annot['ty'] = y_rem / bin_h
+    annot['tw'] = np.log(annot.w.values / priors.w.iloc[annot.prior].values)
+    annot['th'] = np.log(annot.h.values / priors.h.iloc[annot.prior].values)
+    return annot
