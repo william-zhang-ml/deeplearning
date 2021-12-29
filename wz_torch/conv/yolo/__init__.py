@@ -85,6 +85,45 @@ class YoloHead(Module):
         class_conf = self.classify(inp)   # B, K, H, W
         return torch.cat([detect, offset, regr, class_conf], dim=1)
 
+    def decode(self,
+               tens: Tensor,
+               dx: float = 1,
+               dy: float = 1,
+               no_grad: bool = True) -> Tensor:
+        """ Decode prediction tensor into prediction bounding boxes (single sample).
+
+        :param tens:    Yolo prediction grid (5 + K, H, W)
+        :type  tens:    Tensor
+        :param dx:      predictor grid column length, defaults to 1
+        :type  dx:      float, optional
+        :param dy:      predictor grid row length, defaults to 1
+        :type  dy:      float, optional
+        :param no_grad: whether to skip gradient computation, defaults to True
+        :type  no_grad: bool
+        :return:        prediction bounding boxes (H * W, 6)
+        :rtype:         Tensor
+        """
+        _, H, W = tens.shape
+        iy, ix = torch.meshgrid(torch.arange(H), torch.arange(W))
+        if no_grad:
+            with torch.no_grad():
+                decoded = torch.zeros(6, H, W)
+                decoded[0] = tens[0]
+                decoded[1] = (tens[1] + ix) * dx
+                decoded[2] = (tens[2] + iy) * dy
+                decoded[3] = self.prior[0] * tens[3].exp()
+                decoded[4] = self.prior[1] * tens[4].exp()
+                decoded[5] = torch.argmax(tens[5:], dim=0)
+        else:
+            decoded = torch.zeros(6, H, W)
+            decoded[0] = tens[0]
+            decoded[1] = (tens[1] + ix) * dx
+            decoded[2] = (tens[2] + iy) * dy
+            decoded[3] = self.prior[0] * tens[3].exp()
+            decoded[4] = self.prior[1] * tens[4].exp()
+            decoded[5] = torch.argmax(tens[5:], dim=0)
+        return decoded.view(6, H * W).T
+
 
 class YoloLayer(Module):
     """ Parallel Yolo version 1 - 3 prediction heads. """
