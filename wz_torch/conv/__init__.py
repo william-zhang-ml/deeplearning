@@ -14,7 +14,8 @@ class ConvBatchRelu(Sequential):
                  out_channels: int,
                  kernel_size: Union[int, Tuple[int, int]] = 3,
                  stride: Union[int, Tuple[int, int]] = 1,
-                 padding: Union[int, Tuple[int, int]] = 1) -> None:
+                 padding: Union[int, Tuple[int, int]] = 1,
+                 groups: int = 1) -> None:
         """ Constructor.
 
         :param in_channels:  number of input channels
@@ -35,6 +36,7 @@ class ConvBatchRelu(Sequential):
             kernel_size=kernel_size,
             stride=stride,
             padding=padding,
+            groups=groups,
             bias=False))
         self.add_module('norm', nn.BatchNorm2d(out_channels))
         self.add_module('relu', nn.ReLU())
