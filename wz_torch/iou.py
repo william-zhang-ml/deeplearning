@@ -6,7 +6,7 @@ https://arxiv.org/pdf/1911.08287.pdf
 """
 import torch
 from torch import Tensor
-from torchvision.ops.boxes import box_iou
+from torchvision.ops import box_iou
 
 
 PI = torch.acos(torch.tensor(-1)).item()
@@ -95,4 +95,4 @@ def ciou_loss(bbox1: Tensor, bbox2: Tensor) -> Tensor:
     v = aspect_penalty(bbox1, bbox2)
 
     # eqn 10
-    return 1 - iou + diou_penalty(bbox1, bbox2) + v * v / (1 - iou + v)
+    return 1 - iou + diou_penalty(bbox1, bbox2) + v * v / (1 - iou + v + 1e-9)
