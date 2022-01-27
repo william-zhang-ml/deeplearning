@@ -3,13 +3,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pandas import DataFrame
 import torch
-from torch import Tensor
 import torch.nn as nn
-from torch.nn import Module
 from torchvision.ops.boxes import box_iou
 
 
-class YoloHead(Module):
+class YoloHead(nn.Module):
     """ Yolo version 1 - 3 prediction head. """
     def __init__(self,
                  in_channels: int,
@@ -18,7 +16,7 @@ class YoloHead(Module):
                  use_softmax: bool = False) -> None:
         """ Constructor.
 
-        :param in_channels: expected input feature map depth (D)
+        :param in_channels: expected input feature map depth (C)
         :type  in_channels: int
         :param num_class:   number of target classes (K)
         :type  num_class:   int
@@ -71,83 +69,51 @@ class YoloHead(Module):
                 nn.BatchNorm2d(num_class),
                 nn.Sigmoid())        # obj class
 
-    def forward(self, inp: Tensor) -> Tensor:
+    def forward(self, inp: torch.Tensor) -> torch.Tensor:
         """ Detect, localize, and classify objects.
 
-        :param inp: input feature map (B, D, H, W)
-        :type  inp: Tensor
-        :return:    Yolo prediction grid (B, 5 + K, H, W)
-        :rtype:     Tensor
+        :param inp: input feature map (N, C, H, W)
+        :type  inp: torch.Tensor
+        :return:    Yolo prediction grid (N, K + 5, H, W)
+        :rtype:     torch.Tensor
         """
-        detect = self.detect(inp)         # B, 1, H, W
-        offset = self.center_offset(inp)  # B, 2, H, W
-        regr = self.regression(inp)       # B, 2, H, W
-        class_conf = self.classify(inp)   # B, K, H, W
+        detect = self.detect(inp)         # N, 1, H, W
+        offset = self.center_offset(inp)  # N, 2, H, W
+        regr = self.regression(inp)       # N, 2, H, W
+        class_conf = self.classify(inp)   # N, K, H, W
         return torch.cat([detect, offset, regr, class_conf], dim=1)
 
-    def decode_one(self,
-                   tens: Tensor,
-                   dx: float = 1,
-                   dy: float = 1,
-                   no_grad: bool = True) -> Tensor:
-        """ Decode prediction tensor into prediction bounding boxes (one sample).
+    def decode(self,
+               enc: torch.Tensor,
+               no_grad: bool = True) -> torch.Tensor:
+        """ Decode enocded tensor into bounding boxes.
 
-        :param tens:    Yolo prediction grid (5 + K, H, W)
-        :type  tens:    Tensor
-        :param dx:      predictor grid column length, defaults to 1
-        :type  dx:      float, optional
-        :param dy:      predictor grid row length, defaults to 1
-        :type  dy:      float, optional
+        :param enc:     Yolo-encoded grid (N, K + 5, H, W)
+        :type  enc:     torch.Tensor
         :param no_grad: whether to skip gradient computation, defaults to True
         :type  no_grad: bool
-        :return:        prediction bounding boxes (6, H, W)
-        :rtype:         Tensor
+        :return:        bounding boxes (N, H * W, K + 5)
+        :rtype:         torch.Tensor
         """
-        _, H, W = tens.shape
-        iy, ix = torch.meshgrid(torch.arange(H), torch.arange(W))
+        device = self.prior.device
+        N, _, H, W = enc.shape
         if no_grad:
-            with torch.no_grad():
-                decoded = torch.zeros(6, H, W)
-                decoded[0] = tens[0]
-                decoded[1] = (tens[1] + ix) * dx
-                decoded[2] = (tens[2] + iy) * dy
-                decoded[3] = self.prior[0] * tens[3].exp()
-                decoded[4] = self.prior[1] * tens[4].exp()
-                decoded[5] = torch.argmax(tens[5:], dim=0)
+            dec = enc.detach().clone()
         else:
-            decoded = torch.zeros(6, H, W)
-            decoded[0] = tens[0]
-            decoded[1] = (tens[1] + ix) * dx
-            decoded[2] = (tens[2] + iy) * dy
-            decoded[3] = self.prior[0] * tens[3].exp()
-            decoded[4] = self.prior[1] * tens[4].exp()
-            decoded[5] = torch.argmax(tens[5:], dim=0)
-        return decoded
-
-    def decode_all(self,
-                   tens: Tensor,
-                   dx: float = 1,
-                   dy: float = 1,
-                   no_grad: bool = True) -> Tensor:
-        """ Decode prediction tensor into prediction bounding boxes.
-
-        :param tens:    Yolo prediction grid (B, 5 + K, H, W)
-        :type  tens:    Tensor
-        :param dx:      predictor grid column length, defaults to 1
-        :type  dx:      float, optional
-        :param dy:      predictor grid row length, defaults to 1
-        :type  dy:      float, optional
-        :param no_grad: whether to skip gradient computation, defaults to True
-        :type  no_grad: bool
-        :return:        prediction bounding boxes (B, 6, H, W)
-        :rtype:         Tensor
-        """
-        return torch.stack(
-            [self.decode_one(t, dx, dy, no_grad) for t in tens],
-            dim=0)
+            dec = enc.clone()
+        iy, ix = torch.meshgrid(
+            torch.arange(H, device=device),
+            torch.arange(W, device=device)
+        )
+        dec[:, 1] = dec[:, 1] + ix.unsqueeze(0)
+        dec[:, 2] = dec[:, 2] + iy.unsqueeze(0)
+        dec = dec.view(N, self.num_class + 5, -1)
+        dec[:, 3] = self.prior[0] * dec[:, 3].exp()
+        dec[:, 4] = self.prior[1] * dec[:, 4].exp()
+        return dec.transpose(-2, -1)
 
 
-class YoloLayer(Module):
+class YoloLayer(nn.Module):
     """ Parallel Yolo version 1 - 3 prediction heads. """
     def __init__(self,
                  in_channels: int,
@@ -175,42 +141,35 @@ class YoloLayer(Module):
             for p in priors
         ])
 
-    def forward(self, inp: Tensor) -> Tensor:
+    def forward(self, inp: torch.Tensor) -> torch.Tensor:
         """ Detect, localize, and classify objects.
 
-        :param inp: input feature map (B, D, H, W)
-        :type  inp: Tensor
-        :return:    Yolo prediction grid (P, B, 5 + K, H, W)
-        :rtype:     Tensor
+        :param inp: input feature map (N, C, H, W)
+        :type  inp: torch.Tensor
+        :return:    Yolo prediction grid (P, N, K + 5, H, W)
+        :rtype:     torch.Tensor
         """
         return torch.stack([h(inp) for h in self.heads], dim=0)
 
     def decode(self,
-               tens: Tensor,
-               dx: float = 1,
-               dy: float = 1,
-               no_grad: bool = True) -> Tensor:
-        """ Decode prediction tensor into prediction bounding boxes.
+               enc: torch.Tensor,
+               no_grad: bool = True) -> torch.Tensor:
+        """ Decode enocded tensor into bounding boxes.
 
-        :param tens:    Yolo prediction grid (P, B, 5 + K, H, W)
-        :type  tens:    Tensor
-        :param dx:      predictor grid column length, defaults to 1
-        :type  dx:      float, optional
-        :param dy:      predictor grid row length, defaults to 1
-        :type  dy:      float, optional
+        :param enc:     Yolo-encoded grid (P, N, K + 5, H, W)
+        :type  enc:     torch.Tensor
         :param no_grad: whether to skip gradient computation, defaults to True
-        :type  no_grad: bool
-        :return:        prediction bounding boxes (P, B, 6, H, W)
-        :rtype:         Tensor
+        :type  no_grad: bool, optional
+        :return:        bounding boxes (N, P * H * W, K + 5)
+        :rtype:         torch.Tensor
         """
-        paired = zip(tens, self.heads)
-        return torch.stack(
-            [h.decode_all(t, dx, dy, no_grad) for t, h in paired],
-            dim=0)
+        return torch.cat(
+            [head.decode(e, no_grad) for head, e in zip(self.heads, enc)],
+            dim=1)
 
 
 def assign_to_prior(boxes: Iterable[Iterable[float]],
-                    priors: Iterable[Iterable[float]]) -> Tensor:
+                    priors: Iterable[Iterable[float]]) -> torch.Tensor:
     """ Matches bounding box to best-fit prior box.
 
     :param boxes:  bounding boxes (width, height) to match, (N, 2)
